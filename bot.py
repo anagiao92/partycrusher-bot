@@ -124,7 +124,13 @@ class RoleMultiSelect(discord.ui.Select):
         await interaction.response.defer()
 
         # ✅ Send the embed publicly in the channel
-        view = LFGButtonView(creator=interaction.user, creator_role=ctx["your_role"], required_roles=[r.lower().replace(" ", "") for r in selected_roles])
+        view = LFGButtonView(
+            creator=interaction.user,
+            creator_role=ctx["your_role"],
+            required_roles=selected_roles,
+            context=ctx  # 🧠 this is essential
+        )
+        view.setup_buttons()
         public_message = await interaction.channel.send(embed=embed, view=view)
 
         # ✅ Save reference to the message in the view
@@ -139,6 +145,39 @@ class RoleMultiSelectView(discord.ui.View):
     def __init__(self, interaction, *args, your_role):
         super().__init__(timeout=180)
         self.add_item(RoleMultiSelect(interaction, *args, your_role=your_role))
+
+class UpdateRequiredRoles(discord.ui.Select):
+    def __init__(self, LFGview: 'LFGButtonView'):
+        self.LFGview = LFGview
+        all_roles = [
+            discord.SelectOption(label="Tank", emoji="🛡️"),
+            discord.SelectOption(label="Healer", emoji="❤️‍🩹"),
+            discord.SelectOption(label="Melee DPS", emoji="⚔️"),
+            discord.SelectOption(label="Ranged DPS", emoji="🏹")
+        ]
+
+        super().__init__(
+            placeholder="Select updated required roles",
+            min_values=1,
+            max_values=len(all_roles),
+            options=all_roles
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Update required roles
+        self.LFGview.required_roles = [role.lower().replace(" ", "") for role in self.values]
+        await self.LFGview.update_embed()
+        await interaction.response.edit_message(
+            content="✅ Required roles updated.",
+            view=None
+        )
+
+        self.view.stop()
+
+class UpdateRequiredRolesView(discord.ui.View):
+    def __init__(self, LFGview: 'LFGButtonView'):
+        super().__init__(timeout=180)
+        self.add_item(UpdateRequiredRoles(LFGview))
 
 class RequirementsEdit(discord.ui.Modal, title="Edit Group Requirements"):
     def __init__(self, view: 'LFGButtonView'):
@@ -205,11 +244,13 @@ async def lfg(
 # Role Button View Class #
 class LFGButtonView(discord.ui.View):
     ## Initiate parameters and variables ##
-    def __init__(self, creator: discord.User, creator_role: str, required_roles: list[str]):
+    def __init__(self, creator: discord.User, creator_role: str, required_roles: list[str], context: dict):
         #Variables
         super().__init__(timeout=1800)
         self.creator = creator
         self.creator_role = creator_role
+        self.creator_original_role = creator_role.lower().replace(" ", "")
+        self.context = context
         self.closed = False
         self.required_roles = [r.lower().replace(" ", "") for r in required_roles]
         self.members = {
@@ -219,108 +260,42 @@ class LFGButtonView(discord.ui.View):
             "rangeddps": []
             #,"support": []
         }
+        
+        self.tank = discord.ui.Button(label="🛡️ Tank", style=discord.ButtonStyle.primary, custom_id="tank")
+        self.healer = discord.ui.Button(label="❤️‍🩹 Healer", style=discord.ButtonStyle.primary, custom_id="healer")
+        self.meleedps = discord.ui.Button(label="⚔️ Melee DPS", style=discord.ButtonStyle.primary, custom_id="meleedps")
+        self.rangeddps = discord.ui.Button(label="🏹 Ranged DPS", style=discord.ButtonStyle.primary, custom_id="rangeddps")
+        self.edit_requirements = discord.ui.Button(label="✏️ Edit Requirements", style=discord.ButtonStyle.secondary)
+        self.leave = discord.ui.Button(label="🚪 Leave Party", style=discord.ButtonStyle.secondary)
+        self.cancel = discord.ui.Button(label="❌ Close Group", style=discord.ButtonStyle.secondary)
 
+        # Defer callback binding until methods exist
         self.message = None
+        self.context = context  # ✅ store the context from RoleMultiSelect
 
         # Auto-assign creator to their role
         role_key = creator_role.lower().replace(" ", "")  # E.g., "Melee DPS" → "meleedps"
         self.members[role_key].append(creator.mention)
-    ##    
-    ## Update the Embed deffinition ##
-    async def update_embed(self):
-        embed = self.message.embeds[0]
-        embed.clear_fields()
-
-        role_labels = {
-            "tank": "🛡️ Tank",
-            "healer": "❤️‍🩹 Healer",
-            "meleedps": "⚔️ Melee DPS",
-            "rangeddps": "🏹 Ranged DPS"
-            #,"support": "🤝 Support"
-        }
-
-        for role, users in self.members.items():
-            
-            if role not in self.required_roles:
-                value = "*Filled Spot*"  # Role is not needed
-            else:
-                value = "\n".join(
-                    f"{i+1}. {user} 👑" if user == self.creator.mention else f"{i+1}. {user}"
-                    for i, user in enumerate(users)
-                ) or "*— empty —*"
-
-            embed.add_field(name=f"{role_labels[role]} ({len(users)})", value=value, inline=False)
-
-        await self.message.edit(embed=embed, view=self)
-    ##    
-    ## Join Roles deffinition ##
-    async def _join_role(self, interaction: discord.Interaction, role: str):
-        user_mention = interaction.user.mention
-
-        for r in self.members:
-            if user_mention in self.members[r]:
-                self.members[r].remove(user_mention)
-
-        self.members[role].append(user_mention)
-
-        await interaction.response.send_message(
-            f"✅ You joined as **{role.replace('dps',' DPS').capitalize()}**!", ephemeral=True
-        )
-
-        if self.message:
-            await self.update_embed()
     ##
-    ## Timeout deffinition ##
-    async def on_timeout(self):
-        if self.closed or not self.message:
-            return
-        
-        #Strikethrough the embed text and set footer
-        embed = self.message.embeds[0]
-        embed.title = f"~~{embed.title}~~"
-        embed.description = f"~~{embed.description}~~"
-        embed.set_footer(text="⏳ Group expired after 30 minutes.")
-
-        for item in self.children:
-            item.disabled = True
-        
-        try:
-            await self.message.edit(embed=embed, view=self)
-        except discord.NotFound:
-            pass 
-    ##   
-    #Button Definition 
-    #Tank
-    @discord.ui.button(label="🛡️ Tank", style=discord.ButtonStyle.primary)
-    async def tank(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def handle_tank(self, interaction):
         await self._join_role(interaction, "tank")
-    #Healer
-    @discord.ui.button(label="❤️‍🩹 Healer", style=discord.ButtonStyle.primary)
-    async def healer(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    async def handle_healer(self, interaction):
         await self._join_role(interaction, "healer")
-    #Melee DPS
-    @discord.ui.button(label="⚔️ Melee DPS", style=discord.ButtonStyle.primary)
-    async def meleedps(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    async def handle_melee(self, interaction):
         await self._join_role(interaction, "meleedps")
-    #Ranged DPS
-    @discord.ui.button(label="🏹 Ranged DPS", style=discord.ButtonStyle.primary)
-    async def rangeddps(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    async def handle_ranged(self, interaction):
         await self._join_role(interaction, "rangeddps")
-    #Support
-    #@discord.ui.button(label="🤝 Support", style=discord.ButtonStyle.primary)
-    #async def support(self, interaction: discord.Interaction, button: discord.ui.Button):
-    #    await self._join_role(interaction, "support")
-    #Leave
-    @discord.ui.button(label="✏️ Edit Requirements", style=discord.ButtonStyle.secondary)
-    async def edit_requirements(self, interaction: discord.Interaction, button: discord.ui.Button):
+    
+    async def handle_edit_requirements(self, interaction: discord.Interaction):
         if interaction.user.id != self.creator.id:
             await interaction.response.send_message("🚫 Only the group creator can edit the requirements.", ephemeral=True)
             return
-
         await interaction.response.send_modal(RequirementsEdit(self))
 
-    @discord.ui.button(label="🚪 Leave Party", style=discord.ButtonStyle.secondary)
-    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def handle_leave(self, interaction: discord.Interaction):
         if interaction.user.id == self.creator.id:
             await interaction.response.send_message("🚫 You can't leave the party as a creator. Use **Close Group** instead.", ephemeral=True)
             return
@@ -338,8 +313,7 @@ class LFGButtonView(discord.ui.View):
         else:
             await interaction.response.send_message("⚠️ You're not in the party", ephemeral=True)
     #Cancel
-    @discord.ui.button(label="❌ Close Group", style=discord.ButtonStyle.secondary)
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def handle_cancel(self, interaction: discord.Interaction):
         if interaction.user.id != self.creator.id:
             await interaction.response.send_message("🚫 You can't cancel the party if you're not the creator. Use **Leave Party** instead.", ephemeral=True)
             return
@@ -369,7 +343,120 @@ class LFGButtonView(discord.ui.View):
             item.disabled = True
 
         await self.message.edit(embed=embed, view=self)
-        await interaction.response.send_message("✅ Group has been closed.", ephemeral=True)
+        await interaction.response.send_message("✅ Group has been closed.", ephemeral=True)    
 
+    def setup_buttons(self):
+        self.tank.callback = self.handle_tank
+        self.healer.callback = self.handle_healer
+        self.meleedps.callback = self.handle_melee
+        self.rangeddps.callback = self.handle_ranged
+        self.edit_requirements.callback = self.handle_edit_requirements
+        self.leave.callback = self.handle_leave
+        self.cancel.callback = self.handle_cancel
+        # Set button rows
+        # Row 1 #
+        self.tank.row = 0
+        self.healer.row = 0
+        self.meleedps.row = 0
+        self.rangeddps.row = 0
+        self.edit_requirements.row = 0
+        # Row 2 #
+        self.leave.row = 1
+        self.cancel.row = 1
+
+        # Determine which buttons should be disabled
+        for btn in [self.tank, self.healer, self.meleedps, self.rangeddps]:
+            btn.disabled = btn.custom_id not in self.required_roles
+
+        # Add items in order
+        for btn in [self.tank, self.healer, self.meleedps, self.rangeddps,
+                    self.edit_requirements, self.leave, self.cancel]:
+            self.add_item(btn)
+    ##    
+    ## Update the Embed deffinition ##
+    async def update_embed(self):
+        embed = self.message.embeds[0]
+        embed.clear_fields()
+
+        role_labels = {
+            "tank": "🛡️ Tank",
+            "healer": "❤️‍🩹 Healer",
+            "meleedps": "⚔️ Melee DPS",
+            "rangeddps": "🏹 Ranged DPS"
+            #,"support": "🤝 Support"
+        }
+
+        for role, users in self.members.items():
+            role_label = role_labels[role]
+
+            # Build list of users (including crown for creator)
+            user_list = [
+                f"{i+1}. {user} 👑" if user == self.creator.mention else f"{i+1}. {user}"
+                for i, user in enumerate(users)
+            ]
+
+            if role in self.required_roles:
+                # If role is required, show users or "empty"
+                value = "\n".join(user_list) or "*— empty —*"
+            else:
+                if users:
+                    # Even if not required, show users who joined (e.g., creator)
+                    value = "\n".join(user_list)
+                else:
+                    value = "*Filled Spot*"
+
+            embed.add_field(name=f"{role_label} ({len(users)})", value=value, inline=False)
+
+        await self.message.edit(embed=embed, view=self)
+    ##    
+    ## Join Roles deffinition ##
+    async def _join_role(self, interaction: discord.Interaction, role: str):
+        user_mention = interaction.user.mention
+
+        # Remove user from any previous role
+        for r in self.members:
+            if user_mention in self.members[r]:
+                self.members[r].remove(user_mention)
+
+        # Add user to new role
+        self.members[role].append(user_mention)
+
+        # Check if user is creator
+        if interaction.user.id == self.creator.id:
+            await interaction.response.send_message(
+                "👑 You changed your role. Please confirm or update the required roles:",
+                view=UpdateRequiredRolesView(self),
+                ephemeral=True
+            )
+        else:
+            # Regular user
+            await interaction.response.send_message(
+                f"✅ You joined as **{role.replace('dps', ' DPS').capitalize()}**!",
+                ephemeral=True
+            )
+
+        # Always update embed
+        if self.message:
+            await self.update_embed()
+    ##
+    ## Timeout deffinition ##
+    async def on_timeout(self):
+        if self.closed or not self.message:
+            return
+        
+        #Strikethrough the embed text and set footer
+        embed = self.message.embeds[0]
+        embed.title = f"~~{embed.title}~~"
+        embed.description = f"~~{embed.description}~~"
+        embed.set_footer(text="⏳ Group expired after 30 minutes.")
+
+        for item in self.children:
+            item.disabled = True
+        
+        try:
+            await self.message.edit(embed=embed, view=self)
+        except discord.NotFound:
+            pass 
+    ##   
 # Run bot
 bot.run(TOKEN)
