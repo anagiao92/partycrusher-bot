@@ -1,111 +1,203 @@
-import discord
-from discord.ext import commands
+# bot.py
+# -----------------------
+# PartyCrusher — Mythic+ LFG Discord bot
+# Single-file, clean structure with comments and modern discord.py (2.x) features.
+# -----------------------
+
+from __future__ import annotations
+
 import os
 import random
 import string
-from dotenv import load_dotenv
-from typing import Literal
+from typing import Literal, Optional
 
-#Global Variables
-# Load environment
-load_dotenv(dotenv_path=".env.dev")
+import discord
+from discord import app_commands
+from discord.ext import commands
+from discord.utils import find
+from dotenv import load_dotenv, dotenv_values
+from pathlib import Path
+
+ENV_FILE = ".env.prod"
+ENV_PATH = Path(__file__).resolve().parent / ENV_FILE
+
+print("ENV DEBUG →")
+print("  path:", ENV_PATH)
+print("  exists:", ENV_PATH.exists())
+print("  cwd:", Path.cwd())
+print("  files here:", [p.name for p in ENV_PATH.parent.iterdir()])
+
+# Read raw contents (mask token if present)
+if ENV_PATH.exists():
+    raw = ENV_PATH.read_text(encoding="utf-8", errors="replace")
+    print("  first 200 chars:", raw[:200].replace(os.getenv("DISCORD_TOKEN", ""), "***"))
+
+vals = dotenv_values(str(ENV_PATH), encoding="utf-8")
+print("  parsed keys:", list(vals.keys()))
+
+# Now actually load it (force override just in case something is set in your shell)
+load_dotenv(dotenv_path=str(ENV_PATH), override=True, encoding="utf-8")
+
+print("  DISCORD_TOKEN present after load?:", bool(os.getenv("DISCORD_TOKEN")))
+
+# =========================
+# Environment / Constants
+# =========================
+
+# Load variables from .env.dev (DISCORD_TOKEN required)
+#load_dotenv(dotenv_path=".env.prod")
+#TOKEN = os.getenv("DISCORD_TOKEN")
+#if not TOKEN:
+#    raise RuntimeError("DISCORD_TOKEN is missing. Add it to .env.dev")
+
+ENV_FILE = ".env.prod"  # or make this dynamic later
+ENV_PATH = os.path.join(os.path.dirname(__file__), ENV_FILE)
+
+print("DEBUG .env contents:", {k: ("***" if k=="DISCORD_TOKEN" else v) for k,v in dotenv_values(ENV_PATH).items()})
+# Force-file values to override anything in the current environment
+load_dotenv(dotenv_path=ENV_PATH, override=True)
+
 TOKEN = os.getenv("DISCORD_TOKEN")
-MY_GUILD = discord.Object(id=813092953236176928)
-# Role mention mappings (replace with your actual role IDs)
-ROLE_PINGS = {
-    "Tank": "<@&1400104959491444786>",
-    "Healer": "<@&1400105203616976946>",
-    "Melee DPS": "<@&1400105285678272697>",
-    "Ranged DPS": "<@&1400105294456946811>",
-    #"Support": "<@&1400105300865978418>",
+if not TOKEN:
+    raise RuntimeError(f"DISCORD_TOKEN is missing in {ENV_FILE}")
+
+# Canonical display names used in UI and per-guild role resolution
+ROLE_TITLES = ["Tank", "Healer", "Melee DPS", "Ranged DPS"]
+
+# Internal role keys -> display titles
+ROLE_KEY_TO_TITLE = {
+    "tank": "Tank",
+    "healer": "Healer",
+    "meleedps": "Melee DPS",
+    "rangeddps": "Ranged DPS",
 }
 
+# In-memory role-id cache: { guild_id: { "Tank": role_id, ... } }
+_ROLE_CACHE: dict[int, dict[str, int]] = {}
+
+# =========================
+# Bot Setup
+# =========================
+
 intents = discord.Intents.default()
+# Required for buttons & slash commands; message_content is only needed if you read message text
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+
+# =========================
+# Utilities
+# =========================
+
+def generate_listed_as(dungeon: str) -> str:
+    """Return the title prefix for the embed."""
+    return f"KC: {dungeon}"
+
+def generate_passphrase(length: int = 8) -> str:
+    """Create a random passphrase for a group."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(random.choices(alphabet, k=length))
+
+def _find_role_id_by_title(guild: discord.Guild, title: str) -> Optional[int]:
+    """
+    Return the Discord role id for a role with the given display title (case-insensitive).
+    Uses an in-memory cache to avoid repeated scans of guild.roles.
+    """
+    cached = _ROLE_CACHE.get(guild.id, {}).get(title)
+    if cached is not None:
+        return cached
+
+    role = find(lambda r: r.name.lower() == title.lower(), guild.roles)
+    if role:
+        _ROLE_CACHE.setdefault(guild.id, {})[title] = role.id
+        return role.id
+    return None
+
+def get_role_ping(guild: discord.Guild, title: str) -> str:
+    """Return a mention string for the display title, or a readable fallback like @Tank."""
+    rid = _find_role_id_by_title(guild, title)
+    return f"<@&{rid}>" if rid else f"@{title}"
+
+
+# =========================
+# Event Hooks
+# =========================
+
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
-
-    #async def cleanupguild():
-     #  test_guild = discord.Object(id=813092953236176928)  # Replace with your actual server ID
-
-     #   try:
-     #       bot.tree.clear_commands(guild=test_guild)  # ✅ no await here
-     #       await bot.tree.sync(guild=test_guild)
-     #       print("🧹 Cleared and resynced test guild commands.")
-     #   except Exception as e:
-     #       print(f"❌ Failed to clear commands: {e}")
-
-    #await cleanupguild()
-
-    #async def cleanupglobal():  
-
-     #   try:
-     #      bot.tree.clear_commands(guild=None)  # ✅ no await here
-     #       await bot.tree.sync()
-     #       print("🧹 Cleared and resynced global commands.")
-     #   except Exception as e:
-     #       print(f"❌ Failed to clear commands: {e}")
-
-     # await cleanupglobal()
-
+    # Global sync (use guild-scoped sync if you need faster propagation during dev)
     try:
         synced = await bot.tree.sync()
-        # Force clear old guild commands
-        #bot.tree.clear_commands(guild=MY_GUILD)
-        #synced = await bot.tree.sync(guild=MY_GUILD)
         print(f"🔁 Synced {len(synced)} slash commands.")
         for cmd in synced:
             print(f"   ↪️ /{cmd.name}")
     except Exception as e:
         print(f"❌ Slash command sync failed: {e}")
 
+# Optional: keep the role cache fresh if roles are renamed/deleted
+@bot.event
+async def on_guild_role_update(before: discord.Role, after: discord.Role):
+    _ROLE_CACHE.get(after.guild.id, {}).pop(before.name, None)
+    _ROLE_CACHE.get(after.guild.id, {}).pop(after.name, None)
 
-# Utility: random group name and passphrase
-def generate_listed_as(dungeon):
-    return f"KC: {dungeon}"
+@bot.event
+async def on_guild_role_delete(role: discord.Role):
+    cache = _ROLE_CACHE.get(role.guild.id)
+    if not cache:
+        return
+    for k, v in list(cache.items()):
+        if v == role.id:
+            cache.pop(k, None)
 
-def generate_passphrase():
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+
+# =========================
+# UI: Role Select (Creation)
+# =========================
 
 class RoleMultiSelect(discord.ui.Select):
-    def __init__(self, interaction, dungeon, key_level, timing, requirements, passphrase, listed_as, your_role):
+    """
+    Ephemeral dropdown shown to the creator to select required roles for this listing.
+    Produces the public embed + interactive buttons.
+    """
+    def __init__(self, interaction: discord.Interaction, dungeon: str, key_level: int,
+                 timing: Literal["Timed", "Completion"], requirements: Optional[str],
+                 passphrase: Optional[str], listed_as: Optional[str], your_role: Literal["Tank","Healer","Melee DPS","Ranged DPS"]):
         all_options = [
             discord.SelectOption(label="Tank", emoji="🛡️"),
             discord.SelectOption(label="Healer", emoji="❤️‍🩹"),
             discord.SelectOption(label="Melee DPS", emoji="⚔️"),
             discord.SelectOption(label="Ranged DPS", emoji="🏹"),
-            #discord.SelectOption(label="Support", emoji="🤝"),
         ]
-
-        # Filter out creator's role
-        options = [opt for opt in all_options] #if opt.label != your_role]
+        # If you want to filter out creator's current role from the required list, uncomment below:
+        # options = [opt for opt in all_options if opt.label != your_role]
+        options = [opt for opt in all_options]
 
         super().__init__(
             placeholder="Select required roles",
             min_values=1,
             max_values=len(options),
-            options=options
+            options=options,
         )
 
+        # We carry a small context that seeds the embed + view
         self.interaction = interaction
         self.context = {
             "dungeon": dungeon,
             "key_level": key_level,
             "timing": timing,
-            "your_role" :your_role,
+            "your_role": your_role,
             "requirements": requirements,
             "passphrase": passphrase or generate_passphrase(),
-            "listed_as": listed_as or generate_listed_as(dungeon)
+            "listed_as": listed_as or generate_listed_as(dungeon),
         }
-
 
     async def callback(self, interaction: discord.Interaction):
         selected_roles = self.values
         ctx = self.context
+
+        pings = ", ".join(get_role_ping(interaction.guild, r) for r in selected_roles)
 
         embed = discord.Embed(
             title=f"KC: {ctx['dungeon']} +{ctx['key_level']}",
@@ -113,80 +205,97 @@ class RoleMultiSelect(discord.ui.Select):
                 f"🪪 **Listed As**: `{ctx['listed_as']}`\n"
                 f"🔑 **Passphrase**: ||{ctx['passphrase']}||\n"
                 f"⏱️ **Timing Expectation**: {ctx['timing']}\n"
-                f"👥 **Looking For**: {', '.join(ROLE_PINGS[r] for r in selected_roles)}\n"
-                f"📌 **Specific Requirements**: {ctx['requirements']}\n"
+                f"👥 **Looking For**: {pings if pings else 'None'}\n"
+                f"📌 **Specific Requirements**: {ctx['requirements'] or 'None'}\n"
             ),
-            color=discord.Color.dark_blue()
+            color=discord.Color.dark_blue(),
         )
         embed.set_footer(text="Click a role to join. Group expires in 30 minutes.")
 
-        # ✅ Acknowledge the ephemeral interaction silently
+        # Acknowledge ephemeral interaction
         await interaction.response.defer()
 
-        # ✅ Send the embed publicly in the channel
+        # Create public view + message
         view = LFGButtonView(
             creator=interaction.user,
             creator_role=ctx["your_role"],
             required_roles=selected_roles,
-            context=ctx  # 🧠 this is essential
+            context=ctx,
         )
-        view.setup_buttons()
+        view.setup_buttons()  # rows, callbacks, initial enable/disable
         public_message = await interaction.channel.send(embed=embed, view=view)
-
-        # ✅ Save reference to the message in the view
         view.message = public_message
 
-        # ✅ Delete the original ephemeral message (optional)
+        # Remove the ephemeral select
         await interaction.delete_original_response()
         await view.update_embed()
-        
+
 
 class RoleMultiSelectView(discord.ui.View):
-    def __init__(self, interaction, *args, your_role):
+    """Thin container view for RoleMultiSelect (ephemeral)."""
+    def __init__(self, interaction: discord.Interaction, *args, your_role: str):
         super().__init__(timeout=180)
         self.add_item(RoleMultiSelect(interaction, *args, your_role=your_role))
 
+
+# =========================
+# UI: Update Required Roles (Ephemeral)
+# =========================
+
 class UpdateRequiredRoles(discord.ui.Select):
-    def __init__(self, LFGview: 'LFGButtonView'):
-        self.LFGview = LFGview
-        all_roles = [
+    """
+    Ephemeral dropdown used to update required roles without recreating the embed.
+    Updates the running LFGButtonView and refreshes the message.
+    """
+    def __init__(self, lfg_view: "LFGButtonView"):
+        self.lfg_view = lfg_view
+
+        options = [
             discord.SelectOption(label="Tank", emoji="🛡️"),
             discord.SelectOption(label="Healer", emoji="❤️‍🩹"),
             discord.SelectOption(label="Melee DPS", emoji="⚔️"),
-            discord.SelectOption(label="Ranged DPS", emoji="🏹")
+            discord.SelectOption(label="Ranged DPS", emoji="🏹"),
         ]
-
         super().__init__(
             placeholder="Select updated required roles",
             min_values=1,
-            max_values=len(all_roles),
-            options=all_roles
+            max_values=len(options),
+            options=options,
         )
 
     async def callback(self, interaction: discord.Interaction):
-        # Update required roles
-        self.LFGview.required_roles = [role.lower().replace(" ", "") for role in self.values]
-        await self.LFGview.update_embed()
-        await interaction.response.edit_message(
-            content="✅ Required roles updated.",
-            view=None
-        )
+        # Normalize to internal keys
+        self.lfg_view.required_roles = [role.lower().replace(" ", "") for role in self.values]
+        await self.lfg_view.update_embed()
 
+        # Replace the ephemeral view with a simple confirmation (and close it)
+        await interaction.response.edit_message(content="✅ Required roles updated.", view=None)
         self.view.stop()
 
+
 class UpdateRequiredRolesView(discord.ui.View):
-    def __init__(self, LFGview: 'LFGButtonView'):
+    """Thin container view for UpdateRequiredRoles (ephemeral)."""
+    def __init__(self, lfg_view: "LFGButtonView"):
         super().__init__(timeout=180)
-        self.add_item(UpdateRequiredRoles(LFGview))
+        self.add_item(UpdateRequiredRoles(lfg_view))
+
+
+# =========================
+# UI: Modal — Edit Requirements Text
+# =========================
 
 class RequirementsEdit(discord.ui.Modal, title="Edit Group Requirements"):
-    def __init__(self, view: 'LFGButtonView'):
+    """
+    Modal to update the 'Specific Requirements' line in the embed description.
+    Only the creator can open this modal.
+    """
+    def __init__(self, view: "LFGButtonView"):
         super().__init__()
         self.view = view
 
         self.requirements = discord.ui.TextInput(
             label="New Requirements",
-            placeholder="Enter updated requirements (e.g. interrupt, lust, etc.)",
+            placeholder="Enter updated requirements (e.g., interrupt, lust, etc.)",
             style=discord.TextStyle.paragraph,
             required=True,
             max_length=200,
@@ -195,9 +304,9 @@ class RequirementsEdit(discord.ui.Modal, title="Edit Group Requirements"):
 
     async def on_submit(self, interaction: discord.Interaction):
         embed = self.view.message.embeds[0]
-
-        # Find and update requirements line
         lines = embed.description.splitlines()
+
+        # Replace "Specific Requirements" line
         for i, line in enumerate(lines):
             if "**Specific Requirements**" in line:
                 lines[i] = f"📌 **Specific Requirements**: {self.requirements.value}"
@@ -207,45 +316,75 @@ class RequirementsEdit(discord.ui.Modal, title="Edit Group Requirements"):
         await self.view.message.edit(embed=embed, view=self.view)
         await interaction.response.send_message("✅ Requirements updated!", ephemeral=True)
 
-# LFG command
-#@bot.tree.command(name="lfgt", description="Create a Mythic+ group (test)", guild=MY_GUILD)
-@bot.tree.command(name="lfg", description="Create a Mythic+ group")
 
-@discord.app_commands.describe(
+# =========================
+# Slash Command: /lfg
+# =========================
+
+@bot.tree.command(name="lfg", description="Create a Mythic+ group")
+@app_commands.describe(
     dungeon="Dungeon name (e.g., Dawnbreaker, Priory)",
     key_level="Keystone level (e.g., 15)",
-    passphrase = "Choose a passphrase for your group or leave empty for an autogenerated one",
-    timing = "Your timing expectation",
+    passphrase="Choose a passphrase, or leave empty for auto-generated",
+    timing="Your timing expectation",
     your_role="Which role are you playing?",
     listed_as="Optional name this group will be listed as",
-    requirements="Any utility or requirements you want your party members to have"
+    requirements="Any utilities/requirements teammates should have",
 )
-
 async def lfg(
     interaction: discord.Interaction,
-    dungeon: Literal["Dawnbreaker","Ara-Kara","Operation: Floodgate","Priory of Sacred Flame","Eco-Dome Al'dani","Halls of Atonement","Tazavesh: Streets of Wonder","Tazavesh: So'leah's Gambit"],
+    dungeon: Literal[
+        "Dawnbreaker",
+        "Ara-Kara",
+        "Operation: Floodgate",
+        "Priory of Sacred Flame",
+        "Eco-Dome Al'dani",
+        "Halls of Atonement",
+        "Tazavesh: Streets of Wonder",
+        "Tazavesh: So'leah's Gambit",
+    ],
     key_level: int,
-    timing: Literal["Timed","Completion"],
-    your_role: Literal["Tank","Healer","Melee DPS","Ranged DPS"],
-    #your_role: Literal["Tank","Healer","Melee DPS","Ranged DPS","Support"],
-    requirements: str = None, #should be mandatory??
-    passphrase: str = None, 
-    listed_as: str = None
-    ):
-
+    timing: Literal["Timed", "Completion"],
+    your_role: Literal["Tank", "Healer", "Melee DPS", "Ranged DPS"],
+    requirements: Optional[str] = None,
+    passphrase: Optional[str] = None,
+    listed_as: Optional[str] = None,
+):
+    """
+    Starts an ephemeral flow where the creator chooses required roles,
+    then posts a public, interactive LFG listing with role buttons.
+    """
     await interaction.response.send_message(
         "Please select the roles you're looking for:",
-        view=RoleMultiSelectView(interaction, 
-                                 dungeon, key_level, timing, requirements, passphrase, listed_as, 
-                                 your_role=your_role)
-        ,ephemeral=True
-    )    
+        view=RoleMultiSelectView(
+            interaction,
+            dungeon,
+            key_level,
+            timing,
+            requirements,
+            passphrase,
+            listed_as,
+            your_role=your_role,
+        ),
+        ephemeral=True,
+    )
 
-# Role Button View Class #
+
+# =========================
+# View: LFGButtonView
+# =========================
+
 class LFGButtonView(discord.ui.View):
-    ## Initiate parameters and variables ##
+    """
+    Main interactive view attached to the public LFG message.
+    Handles:
+      - role buttons (Tank/Healer/Melee/Ranged) with dynamic enabled/disabled states
+      - edit requirements (modal)
+      - leave party
+      - close group
+      - auto-prompt creator to update required roles after they switch roles
+    """
     def __init__(self, creator: discord.User, creator_role: str, required_roles: list[str], context: dict):
-        #Variables
         super().__init__(timeout=1800)
         self.creator = creator
         self.creator_role = creator_role
@@ -253,128 +392,133 @@ class LFGButtonView(discord.ui.View):
         self.context = context
         self.closed = False
         self.required_roles = [r.lower().replace(" ", "") for r in required_roles]
-        self.members = {
+        self.members: dict[str, list[str]] = {
             "tank": [],
             "healer": [],
             "meleedps": [],
-            "rangeddps": []
-            #,"support": []
+            "rangeddps": [],
         }
-        
+
+        # Message reference is set after send
+        self.message: Optional[discord.Message] = None
+
+        # Create all buttons up-front (manual approach = full layout control)
         self.tank = discord.ui.Button(label="🛡️ Tank", style=discord.ButtonStyle.primary, custom_id="tank")
         self.healer = discord.ui.Button(label="❤️‍🩹 Healer", style=discord.ButtonStyle.primary, custom_id="healer")
         self.meleedps = discord.ui.Button(label="⚔️ Melee DPS", style=discord.ButtonStyle.primary, custom_id="meleedps")
         self.rangeddps = discord.ui.Button(label="🏹 Ranged DPS", style=discord.ButtonStyle.primary, custom_id="rangeddps")
+
         self.edit_requirements = discord.ui.Button(label="✏️ Edit Requirements", style=discord.ButtonStyle.secondary)
         self.leave = discord.ui.Button(label="🚪 Leave Party", style=discord.ButtonStyle.secondary)
         self.cancel = discord.ui.Button(label="❌ Close Group", style=discord.ButtonStyle.secondary)
 
-        # Defer callback binding until methods exist
-        self.message = None
-        self.context = context  # ✅ store the context from RoleMultiSelect
-
-        # Auto-assign creator to their role
-        role_key = creator_role.lower().replace(" ", "")  # E.g., "Melee DPS" → "meleedps"
+        # Auto-assign creator to their chosen role at creation time
+        role_key = self.creator_original_role  # already normalized
         self.members[role_key].append(creator.mention)
-    ##
-    async def handle_tank(self, interaction):
+
+    # ---- internal: layout/state helpers ----
+
+    def _apply_role_button_states(self):
+        """Enable only required roles (and disable all if the group is closed)."""
+        for btn in (self.tank, self.healer, self.meleedps, self.rangeddps):
+            btn.disabled = (btn.custom_id not in self.required_roles) or self.closed
+
+    def setup_buttons(self):
+        """Bind callbacks, set rows, apply states, then add to the view."""
+        # Bind callbacks
+        self.tank.callback = self._handle_tank
+        self.healer.callback = self._handle_healer
+        self.meleedps.callback = self._handle_melee
+        self.rangeddps.callback = self._handle_ranged
+        self.edit_requirements.callback = self._handle_edit_requirements
+        self.leave.callback = self._handle_leave
+        self.cancel.callback = self._handle_cancel
+
+        # Row layout → Row 0: roles, Row 1: edit, Row 2: controls
+        self.tank.row = self.healer.row = self.meleedps.row = self.rangeddps.row = 0
+        self.edit_requirements.row = 1
+        self.leave.row = self.cancel.row = 2
+
+        # Apply initial disabled/enabled flags
+        self._apply_role_button_states()
+
+        # Add to view in visual order
+        for btn in (
+            self.tank, self.healer, self.meleedps, self.rangeddps,
+            self.edit_requirements, self.leave, self.cancel
+        ):
+            self.add_item(btn)
+
+    # ---- button callbacks ----
+
+    async def _handle_tank(self, interaction: discord.Interaction):
         await self._join_role(interaction, "tank")
 
-    async def handle_healer(self, interaction):
+    async def _handle_healer(self, interaction: discord.Interaction):
         await self._join_role(interaction, "healer")
 
-    async def handle_melee(self, interaction):
+    async def _handle_melee(self, interaction: discord.Interaction):
         await self._join_role(interaction, "meleedps")
 
-    async def handle_ranged(self, interaction):
+    async def _handle_ranged(self, interaction: discord.Interaction):
         await self._join_role(interaction, "rangeddps")
-    
-    async def handle_edit_requirements(self, interaction: discord.Interaction):
+
+    async def _handle_edit_requirements(self, interaction: discord.Interaction):
         if interaction.user.id != self.creator.id:
             await interaction.response.send_message("🚫 Only the group creator can edit the requirements.", ephemeral=True)
             return
         await interaction.response.send_modal(RequirementsEdit(self))
 
-    async def handle_leave(self, interaction: discord.Interaction):
+    async def _handle_leave(self, interaction: discord.Interaction):
         if interaction.user.id == self.creator.id:
-            await interaction.response.send_message("🚫 You can't leave the party as a creator. Use **Close Group** instead.", ephemeral=True)
+            await interaction.response.send_message("🚫 You can't leave the party as the creator. Use **Close Group** instead.", ephemeral=True)
             return
-        user_mention = interaction.user.mention #Interacting User @mention
-        left = False                            #left or not boolean
 
+        user_mention = interaction.user.mention
+        left = False
         for role, users in self.members.items():
-                if user_mention in users:
-                    users.remove(user_mention)
-                    left = True
-        
+            if user_mention in users:
+                users.remove(user_mention)
+                left = True
+
         if left:
-            await interaction.response.send_message("👋  You've left the party", ephemeral=True)
+            await interaction.response.send_message("👋 You've left the party.", ephemeral=True)
             await self.update_embed()
         else:
-            await interaction.response.send_message("⚠️ You're not in the party", ephemeral=True)
-    #Cancel
-    async def handle_cancel(self, interaction: discord.Interaction):
+            await interaction.response.send_message("⚠️ You're not in the party.", ephemeral=True)
+
+    async def _handle_cancel(self, interaction: discord.Interaction):
         if interaction.user.id != self.creator.id:
-            await interaction.response.send_message("🚫 You can't cancel the party if you're not the creator. Use **Leave Party** instead.", ephemeral=True)
+            await interaction.response.send_message("🚫 Only the creator can close the group.", ephemeral=True)
             return
-        
-        #Strikethrough the embed text and set footer
+
+        # Strike through description (preserving spoilers)
         embed = self.message.embeds[0]
         lines = embed.description.split("\n")
-        struck_lines = []
-
+        struck = []
         for line in lines:
-            if "🔑" in line:  # Preserve spoiler formatting
+            if "🔑" in line and "||" in line:
                 parts = line.split("||")
                 if len(parts) == 3:
-                    struck = f"🔑 **Passphrase**: ||~~{parts[1]}~~||"
+                    struck.append(f"🔑 **Passphrase**: ||~~{parts[1]}~~||")
                 else:
-                    struck = f"~~{line}~~"
+                    struck.append(f"~~{line}~~")
             else:
-                struck = f"~~{line}~~"
-            struck_lines.append(struck)
-
-        embed.description = "\n".join(struck_lines)
+                struck.append(f"~~{line}~~")
+        embed.description = "\n".join(struck)
         embed.set_footer(text="❌ This group has been closed.")
 
-        self.closed = True #Flag if it was closed
-        # Disable all buttons
+        self.closed = True
         for item in self.children:
             item.disabled = True
 
         await self.message.edit(embed=embed, view=self)
-        await interaction.response.send_message("✅ Group has been closed.", ephemeral=True)    
+        await interaction.response.send_message("✅ Group has been closed.", ephemeral=True)
 
-    def setup_buttons(self):
-        self.tank.callback = self.handle_tank
-        self.healer.callback = self.handle_healer
-        self.meleedps.callback = self.handle_melee
-        self.rangeddps.callback = self.handle_ranged
-        self.edit_requirements.callback = self.handle_edit_requirements
-        self.leave.callback = self.handle_leave
-        self.cancel.callback = self.handle_cancel
-        # Set button rows
-        # Row 1 #
-        self.tank.row = 0
-        self.healer.row = 0
-        self.meleedps.row = 0
-        self.rangeddps.row = 0
-        self.edit_requirements.row = 0
-        # Row 2 #
-        self.leave.row = 1
-        self.cancel.row = 1
+    # ---- core behavior ----
 
-        # Determine which buttons should be disabled
-        for btn in [self.tank, self.healer, self.meleedps, self.rangeddps]:
-            btn.disabled = btn.custom_id not in self.required_roles
-
-        # Add items in order
-        for btn in [self.tank, self.healer, self.meleedps, self.rangeddps,
-                    self.edit_requirements, self.leave, self.cancel]:
-            self.add_item(btn)
-    ##    
-    ## Update the Embed deffinition ##
     async def update_embed(self):
+        """Rebuild the fields and reapply button states, then edit the message."""
         embed = self.message.embeds[0]
         embed.clear_fields()
 
@@ -382,81 +526,99 @@ class LFGButtonView(discord.ui.View):
             "tank": "🛡️ Tank",
             "healer": "❤️‍🩹 Healer",
             "meleedps": "⚔️ Melee DPS",
-            "rangeddps": "🏹 Ranged DPS"
-            #,"support": "🤝 Support"
+            "rangeddps": "🏹 Ranged DPS",
         }
 
+        # Fields for each role
         for role, users in self.members.items():
             role_label = role_labels[role]
-
-            # Build list of users (including crown for creator)
             user_list = [
                 f"{i+1}. {user} 👑" if user == self.creator.mention else f"{i+1}. {user}"
                 for i, user in enumerate(users)
             ]
 
             if role in self.required_roles:
-                # If role is required, show users or "empty"
                 value = "\n".join(user_list) or "*— empty —*"
             else:
-                if users:
-                    # Even if not required, show users who joined (e.g., creator)
-                    value = "\n".join(user_list)
-                else:
-                    value = "*Filled Spot*"
+                value = "\n".join(user_list) if users else "*Filled Spot*"
 
             embed.add_field(name=f"{role_label} ({len(users)})", value=value, inline=False)
 
+        # Refresh the “Looking For” line with updated pings
+        lines = embed.description.splitlines()
+        for i, line in enumerate(lines):
+            if "Looking For" in line:
+                pings = ", ".join(
+                    get_role_ping(self.message.guild, ROLE_KEY_TO_TITLE[k])
+                    for k in self.required_roles
+                )
+                lines[i] = f"👥 **Looking For**: {pings if pings else 'None'}"
+                break
+        embed.description = "\n".join(lines)
+
+        # Reapply button states (required roles, closed state)
+        self._apply_role_button_states()
+
         await self.message.edit(embed=embed, view=self)
-    ##    
-    ## Join Roles deffinition ##
+
     async def _join_role(self, interaction: discord.Interaction, role: str):
+        """
+        Assign the interacting user to the chosen role button.
+        If the creator changes roles, prompt them to update required roles (ephemeral).
+        """
         user_mention = interaction.user.mention
 
-        # Remove user from any previous role
+        # Remove from any previous role first (single-role membership)
         for r in self.members:
             if user_mention in self.members[r]:
                 self.members[r].remove(user_mention)
 
-        # Add user to new role
+        # Add to the selected new role
         self.members[role].append(user_mention)
 
-        # Check if user is creator
+        # Prompt creator to confirm/update required roles every time they switch
         if interaction.user.id == self.creator.id:
             await interaction.response.send_message(
                 "👑 You changed your role. Please confirm or update the required roles:",
                 view=UpdateRequiredRolesView(self),
-                ephemeral=True
+                ephemeral=True,
             )
         else:
-            # Regular user
             await interaction.response.send_message(
                 f"✅ You joined as **{role.replace('dps', ' DPS').capitalize()}**!",
-                ephemeral=True
+                ephemeral=True,
             )
 
-        # Always update embed
         if self.message:
             await self.update_embed()
-    ##
-    ## Timeout deffinition ##
+
     async def on_timeout(self):
+        """
+        After 30 minutes, auto-expire the post:
+        - strike title/description
+        - disable all buttons
+        """
         if self.closed or not self.message:
             return
-        
-        #Strikethrough the embed text and set footer
+
         embed = self.message.embeds[0]
         embed.title = f"~~{embed.title}~~"
+        # Carefully strike description lines to avoid breaking spoilers, if desired.
         embed.description = f"~~{embed.description}~~"
         embed.set_footer(text="⏳ Group expired after 30 minutes.")
 
         for item in self.children:
             item.disabled = True
-        
+
         try:
             await self.message.edit(embed=embed, view=self)
         except discord.NotFound:
-            pass 
-    ##   
-# Run bot
-bot.run(TOKEN)
+            pass
+
+
+# =========================
+# Entrypoint
+# =========================
+
+if __name__ == "__main__":
+    bot.run(TOKEN)
