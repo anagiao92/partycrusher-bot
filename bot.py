@@ -18,27 +18,27 @@ from discord.utils import find
 from dotenv import load_dotenv, dotenv_values
 from pathlib import Path
 
-ENV_FILE = ".env.prod"
-ENV_PATH = Path(__file__).resolve().parent / ENV_FILE
+#ENV_FILE = ".env.prod"
+#ENV_PATH = Path(__file__).resolve().parent / ENV_FILE
 
-print("ENV DEBUG →")
-print("  path:", ENV_PATH)
-print("  exists:", ENV_PATH.exists())
-print("  cwd:", Path.cwd())
-print("  files here:", [p.name for p in ENV_PATH.parent.iterdir()])
+#print("ENV DEBUG →")
+#print("  path:", ENV_PATH)
+#print("  exists:", ENV_PATH.exists())
+#print("  cwd:", Path.cwd())
+#print("  files here:", [p.name for p in ENV_PATH.parent.iterdir()])
 
 # Read raw contents (mask token if present)
-if ENV_PATH.exists():
-    raw = ENV_PATH.read_text(encoding="utf-8", errors="replace")
-    print("  first 200 chars:", raw[:200].replace(os.getenv("DISCORD_TOKEN", ""), "***"))
+#if ENV_PATH.exists():
+#    raw = ENV_PATH.read_text(encoding="utf-8", errors="replace")
+#    print("  first 200 chars:", raw[:200].replace(os.getenv("DISCORD_TOKEN", ""), "***"))
 
-vals = dotenv_values(str(ENV_PATH), encoding="utf-8")
-print("  parsed keys:", list(vals.keys()))
+#vals = dotenv_values(str(ENV_PATH), encoding="utf-8")
+#print("  parsed keys:", list(vals.keys()))
 
 # Now actually load it (force override just in case something is set in your shell)
-load_dotenv(dotenv_path=str(ENV_PATH), override=True, encoding="utf-8")
+#load_dotenv(dotenv_path=str(ENV_PATH), override=True, encoding="utf-8")
 
-print("  DISCORD_TOKEN present after load?:", bool(os.getenv("DISCORD_TOKEN")))
+#print("  DISCORD_TOKEN present after load?:", bool(os.getenv("DISCORD_TOKEN")))
 
 # =========================
 # Environment / Constants
@@ -50,16 +50,19 @@ print("  DISCORD_TOKEN present after load?:", bool(os.getenv("DISCORD_TOKEN")))
 #if not TOKEN:
 #    raise RuntimeError("DISCORD_TOKEN is missing. Add it to .env.dev")
 
-ENV_FILE = ".env.prod"  # or make this dynamic later
-ENV_PATH = os.path.join(os.path.dirname(__file__), ENV_FILE)
+# --- env loader ---
 
-print("DEBUG .env contents:", {k: ("***" if k=="DISCORD_TOKEN" else v) for k,v in dotenv_values(ENV_PATH).items()})
-# Force-file values to override anything in the current environment
-load_dotenv(dotenv_path=ENV_PATH, override=True)
+APP_ENV = os.getenv("APP_ENV", "prod").lower()  # dev | qa | prod
+ENV_PATH = Path(__file__).resolve().parent / f".env.{APP_ENV}"
+
+# Works both locally and in Docker (compose mounts the env file)
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=str(ENV_PATH), override=True)
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
-    raise RuntimeError(f"DISCORD_TOKEN is missing in {ENV_FILE}")
+    raise RuntimeError(f"DISCORD_TOKEN is missing (looked in {ENV_PATH.name} and process env)")
+# --- end env loader ---
 
 # Canonical display names used in UI and per-guild role resolution
 ROLE_TITLES = ["Tank", "Healer", "Melee DPS", "Ranged DPS"]

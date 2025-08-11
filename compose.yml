@@ -1,0 +1,35 @@
+name: partycrusher
+https://github.com/anagiao92/partycrusher-bot
+services:
+  bot:
+    image: ghcr.io/anagiao92/partycrusher-bot:latest   # prod tag
+    container_name: partycrusher-bot
+    restart: unless-stopped
+    environment:
+      - APP_ENV=prod
+      - TZ=Europe/Lisbon
+    env_file:
+      - .env.prod
+    profiles: ["prod"]
+
+  bot-dev:
+    extends:
+      service: bot
+    image: ghcr.io/anagiao92/partycrusher-bot:dev
+    container_name: partycrusher-bot-dev
+    environment:
+      - APP_ENV=dev
+    env_file:
+      - .env.dev
+    profiles: ["dev"]
+
+  bot-qa:
+    extends:
+      service: bot
+    image: ghcr.io/anagiao92/partycrusher-bot:qa
+    container_name: partycrusher-bot-qa
+    environment:
+      - APP_ENV=qa
+    env_file:
+      - .env.qa
+    profiles: ["qa"]
