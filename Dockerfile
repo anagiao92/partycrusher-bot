@@ -1,22 +1,18 @@
 FROM python:3.12-slim
 
-ENV PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_NO_CACHE_DIR=off \
-    APP_HOME=/app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-WORKDIR $APP_HOME
-
+# Tools for building C extensions (needed by audioop-lts if no wheel)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+WORKDIR /app
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel \
+ && pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py ./
-
-RUN useradd -m appuser && chown -R appuser:appuser $APP_HOME
-USER appuser
-
-ENV APP_ENV=prod
+COPY . /app
 CMD ["python", "bot.py"]
