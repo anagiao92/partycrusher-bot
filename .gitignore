@@ -3,3 +3,4 @@ venv/
 __pycache__/
 *.pyc
 bot._old.py
+deployhowto.txt

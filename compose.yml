@@ -1,5 +1,5 @@
 name: partycrusher
-https://github.com/anagiao92/partycrusher-bot
+
 services:
   bot:
     image: ghcr.io/anagiao92/partycrusher-bot:latest   # prod tag
