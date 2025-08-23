@@ -1,42 +1,35 @@
 name: partycrusher
 
 services:
-  # ===================
-  # Production service
-  # ===================
-  bot:
-    image: ghcr.io/anagiao92/partycrusher-bot:prod
-    container_name: partycrusher-bot
+  bot-dev:
+    image: ghcr.io/anagiao92/partycrusher-bot:dev
+    container_name: bot-dev
     restart: unless-stopped
+    environment:
+      - APP_ENV=dev
+      - TZ=Europe/Lisbon
     env_file:
-      - .env.prod
+      - .env.dev
+    profiles: ["dev"]
+
+  bot-qa:
+    image: ghcr.io/anagiao92/partycrusher-bot:qa
+    container_name: bot-qa
+    restart: unless-stopped
+    environment:
+      - APP_ENV=qa
+      - TZ=Europe/Lisbon
+    env_file:
+      - .env.qa
+    profiles: ["qa"]
+
+  bot-prod:
+    image: ghcr.io/anagiao92/partycrusher-bot:prod
+    container_name: bot-prod
+    restart: unless-stopped
     environment:
       - APP_ENV=prod
       - TZ=Europe/Lisbon
+    env_file:
+      - .env.prod
     profiles: ["prod"]
-
-  # ===================
-  # Development service
-  # ===================
-  bot-dev:
-    image: ghcr.io/anagiao92/partycrusher-bot:dev
-    container_name: partycrusher-bot-dev
-    restart: unless-stopped
-    env_file:
-      - .env.dev
-    environment:
-      - APP_ENV=dev
-    profiles: ["dev"]
-
-  # ===================
-  # QA service
-  # ===================
-  bot-qa:
-    image: ghcr.io/anagiao92/partycrusher-bot:qa
-    container_name: partycrusher-bot-qa
-    restart: unless-stopped
-    env_file:
-      - .env.qa
-    environment:
-      - APP_ENV=qa
-    profiles: ["qa"]
