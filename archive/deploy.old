@@ -1,0 +1,49 @@
+name: Deploy Bot
+
+on:
+  push:
+    branches:
+      - dev
+      - qa
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Determine Environment
+        id: envselect
+        run: |
+          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+            echo "profile=prod" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF##*/}" == "qa" ]]; then
+            echo "env=qa" >> $GITHUB_OUTPUT
+            echo "profile=qa" >> $GITHUB_OUTPUT
+          else
+            echo "env=dev" >> $GITHUB_OUTPUT
+            echo "profile=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop Old Container
+        run: |
+          docker compose --profile ${{ steps.envselect.outputs.profile }} down || true
+
+      - name: Build New Image
+        run: |
+          docker build \
+            -t partycrusher-bot:${{ steps.envselect.outputs.env }} .
+
+      - name: Start New Container
+        run: |
+          $env:ENV="${{ steps.envselect.outputs.env }}"
+          docker compose --profile ${{ steps.envselect.outputs.profile }} up -d --build

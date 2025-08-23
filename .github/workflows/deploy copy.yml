@@ -1,0 +1,45 @@
+name: Deploy PartyCrusher Bot
+
+on:
+  push:
+    branches:
+      - dev
+      - qa
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up Docker
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # 3. Set environment based on branch
+      - name: Set environment name
+        id: set-env
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
+            echo "env=dev" >> $GITHUB_ENV
+          elif [[ "${GITHUB_REF}" == "refs/heads/qa" ]]; then
+            echo "env=qa" >> $GITHUB_ENV
+          else
+            echo "env=prod" >> $GITHUB_ENV
+          fi
+
+      # 4. Build & push image
+      - name: Build & Push Docker Image
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}:${{ env.env }} .
+          docker push ghcr.io/${{ github.repository }}:${{ env.env }}
+
+      # 5. Deploy container
+      - name: Deploy Container
+        run: |
+          docker compose --profile ${{ env.env }} down || true
+          docker compose --profile ${{ env.env }} up -d --pull always --build

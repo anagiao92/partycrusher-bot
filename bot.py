@@ -93,9 +93,11 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Utilities
 # =========================
 
-def generate_listed_as(dungeon: str) -> str:
+def generate_listed_as(dungeon: str, length: int = 8) -> str:
     """Return the title prefix for the embed."""
-    return f"KC: {dungeon}"
+    alphabet = string.ascii_letters + string.digits
+    concat = "".join(random.choices(alphabet, k=length))
+    return "KC: " + dungeon + " - " + concat 
 
 def generate_passphrase(length: int = 8) -> str:
     """Create a random passphrase for a group."""
