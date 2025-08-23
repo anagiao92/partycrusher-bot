@@ -55,7 +55,7 @@ jobs:
 
       # Deploy container
       - name: Deploy container
-        shell: pwsh
+        shell: powershell
         run: |
           try {
             docker compose --profile $env:ENV_NAME down --remove-orphans
