@@ -46,10 +46,16 @@ jobs:
           }
 
       # 4. Build & push image
-      - name: Build & Push Docker Image
+      - name: Deploy Container
+        shell: powershell
         run: |
-          docker build -t ghcr.io/${{ github.repository }}:${{ env.env }} .
-          docker push ghcr.io/${{ github.repository }}:${{ env.env }}
+          try {
+            docker compose --profile $env:ENV down
+          } catch {
+            Write-Host "No existing containers to stop, continuing..."
+          }
+          docker compose --profile $env:ENV up -d --pull always --build
+
 
       # 5. Deploy container
       - name: Deploy Container
