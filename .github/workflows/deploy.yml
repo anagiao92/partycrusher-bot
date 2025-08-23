@@ -18,7 +18,7 @@ jobs:
 
       # Set ENV_NAME & TAG based on branch
       - name: Set environment variables
-        shell: pwsh
+        shell: powershell
         run: |
           if ($env:GITHUB_REF -eq "refs/heads/dev") {
             echo "ENV_NAME=dev" >> $env:GITHUB_ENV
@@ -35,7 +35,7 @@ jobs:
 
       # Generate the environment file dynamically
       - name: Generate environment file
-        shell: pwsh
+        shell: powershell
         run: |
           Set-Content -Path ".env.$env:ENV_NAME" -Value "${{ secrets.ENV_FILE }}"
 
@@ -55,7 +55,7 @@ jobs:
 
       # Deploy container
       - name: Deploy container
-        shell: pwsh
+        shell: powershell
         run: |
           docker compose --profile $env:ENV_NAME down --remove-orphans || echo "No existing container"
           docker compose --profile $env:ENV_NAME up -d --pull always --build
