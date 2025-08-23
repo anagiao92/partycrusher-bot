@@ -55,7 +55,12 @@ jobs:
 
       # Deploy container
       - name: Deploy container
-        shell: powershell
+        shell: pwsh
         run: |
-          docker compose --profile $env:ENV_NAME down --remove-orphans || echo "No existing container"
+          try {
+            docker compose --profile $env:ENV_NAME down --remove-orphans
+          } catch {
+            Write-Host "No existing container found, continuing..."
+          }
+
           docker compose --profile $env:ENV_NAME up -d --pull always --build
