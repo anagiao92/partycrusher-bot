@@ -26,19 +26,19 @@ jobs:
 
       # 3. Set environment based on branch
       - name: Set Environment Name
-        shell: pwsh
+        shell: powershell
         run: |
           if ($env:GITHUB_REF -eq "refs/heads/dev") {
-            echo "ENV=dev" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            echo "TAG=dev" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "ENV=dev" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "TAG=dev" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
           elseif ($env:GITHUB_REF -eq "refs/heads/qa") {
-            echo "ENV=qa" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            echo "TAG=qa" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "ENV=qa" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "TAG=qa" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
           elseif ($env:GITHUB_REF -eq "refs/heads/main") {
-            echo "ENV=prod" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-            echo "TAG=latest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "ENV=prod" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "TAG=latest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
           else {
             Write-Error "Unknown branch: $env:GITHUB_REF"
