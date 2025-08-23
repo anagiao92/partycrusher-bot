@@ -26,14 +26,20 @@ jobs:
 
       # 3. Set environment based on branch
       - name: Set Environment Name
-        id: set-env
+        shell: bash
         run: |
           if [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
-            echo "env=dev" >> $GITHUB_ENV
+            echo "ENV=dev" >> $GITHUB_ENV
+            echo "TAG=dev" >> $GITHUB_ENV
           elif [[ "${GITHUB_REF}" == "refs/heads/qa" ]]; then
-            echo "env=qa" >> $GITHUB_ENV
+            echo "ENV=qa" >> $GITHUB_ENV
+            echo "TAG=qa" >> $GITHUB_ENV
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+            echo "TAG=latest" >> $GITHUB_ENV
           else
-            echo "env=prod" >> $GITHUB_ENV
+            echo "Unknown branch. Exiting."
+            exit 1
           fi
 
       # 4. Build & push image
