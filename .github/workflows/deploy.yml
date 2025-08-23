@@ -12,7 +12,7 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      # 1. Checkout repo
+      # 1. Checkout Repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -21,7 +21,7 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       # 3. Set environment based on branch
-      - name: Set environment name
+      - name: Set Environment Name
         id: set-env
         run: |
           if [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
