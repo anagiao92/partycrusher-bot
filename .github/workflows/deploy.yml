@@ -26,21 +26,24 @@ jobs:
 
       # 3. Set environment based on branch
       - name: Set Environment Name
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
-            echo "ENV=dev" >> $GITHUB_ENV
-            echo "TAG=dev" >> $GITHUB_ENV
-          elif [[ "${GITHUB_REF}" == "refs/heads/qa" ]]; then
-            echo "ENV=qa" >> $GITHUB_ENV
-            echo "TAG=qa" >> $GITHUB_ENV
-          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            echo "ENV=prod" >> $GITHUB_ENV
-            echo "TAG=latest" >> $GITHUB_ENV
-          else
-            echo "Unknown branch. Exiting."
+          if ($env:GITHUB_REF -eq "refs/heads/dev") {
+            echo "ENV=dev" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            echo "TAG=dev" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+          elseif ($env:GITHUB_REF -eq "refs/heads/qa") {
+            echo "ENV=qa" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            echo "TAG=qa" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+          elseif ($env:GITHUB_REF -eq "refs/heads/main") {
+            echo "ENV=prod" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            echo "TAG=latest" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
+          else {
+            Write-Error "Unknown branch: $env:GITHUB_REF"
             exit 1
-          fi
+          }
 
       # 4. Build & push image
       - name: Build & Push Docker Image
