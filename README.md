@@ -1,12 +1,12 @@
-# Mythic+ Group Bot (Dungeon Buddy Clone)
+# Mythic+ Group Bot 
 
 A Discord bot for World of Warcraft Mythic+ group creation and coordination. Inspired by [Dungeon Buddy](https://github.com/KieranChambers/Dungeon-Buddy).
 
 ## Features
 
 - Slash commands:
-  - `/lfg` – Interactive group creation (coming soon)
-  - `/lfgquick` – Quick group creation via string
+  - `/lfg` – Interactive group creation
+  - `/lfgquick` – Quick group creation via string (coming soon)
   - `/lfghistory` – View past groups and passphrases (coming soon)
   - `/lfgstats` – Group creation stats (coming soon)
 
