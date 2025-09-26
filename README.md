@@ -1,4 +1,4 @@
-# Mythic+ Group Bot 
+# WoW Mythic+ Group Listing Bot 
 
 A Discord bot for World of Warcraft Mythic+ group creation and coordination. Inspired by [Dungeon Buddy](https://github.com/KieranChambers/Dungeon-Buddy).
 
