@@ -328,7 +328,7 @@ class RequirementsEdit(discord.ui.Modal, title="Edit Group Requirements"):
 
 @bot.tree.command(name="lfg", description="Create a Mythic+ group")
 @app_commands.describe(
-    dungeon="Dungeon name (e.g., Dawnbreaker, Priory)",
+    dungeon="Dungeon Name",
     key_level="Keystone level (e.g., 15)",
     passphrase="Choose a passphrase, or leave empty for auto-generated",
     timing="Your timing expectation",
@@ -339,14 +339,14 @@ class RequirementsEdit(discord.ui.Modal, title="Edit Group Requirements"):
 async def lfg(
     interaction: discord.Interaction,
     dungeon: Literal[
-        "Dawnbreaker",
-        "Ara-Kara",
-        "Operation: Floodgate",
-        "Priory of Sacred Flame",
-        "Eco-Dome Al'dani",
-        "Halls of Atonement",
-        "Tazavesh: Streets of Wonder",
-        "Tazavesh: So'leah's Gambit",
+        "Magister's Terrace",
+        "Maisara Caverns",
+        "Nexus-Point Xenas",
+        "Windrunner Spire",
+        "Algeth'ar Academy",
+        "Seat of the Triumvirate",
+        "Skyreach",
+        "Pit of Saron",
     ],
     key_level: int,
     timing: Literal["Timed", "Completion"],
