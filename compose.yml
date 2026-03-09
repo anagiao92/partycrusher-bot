@@ -24,7 +24,7 @@ services:
     profiles: ["qa"]
 
   bot-prod:
-    image: ghcr.io/anagiao92/partycrusher-bot:main
+    image: ghcr.io/anagiao92/partycrusher-bot:prod
     container_name: bot-prod
     restart: unless-stopped
     environment:
