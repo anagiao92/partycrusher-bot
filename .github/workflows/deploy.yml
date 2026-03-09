@@ -28,7 +28,7 @@ jobs:
             echo "ENV_NAME=qa" >> $env:GITHUB_ENV
             echo "TAG=qa" >> $env:GITHUB_ENV
           }
-          elseif ($env:GITHUB_REF -eq "refs/heads/main") {
+          elseif ($env:GITHUB_REF -eq "refs/heads/prod") {
             echo "ENV_NAME=prod" >> $env:GITHUB_ENV
             echo "TAG=prod" >> $env:GITHUB_ENV
           }
