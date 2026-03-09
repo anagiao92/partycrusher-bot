@@ -37,7 +37,9 @@ jobs:
       - name: Generate environment file
         shell: powershell
         run: |
-          Set-Content -Path ".env.$env:ENV_NAME" -Value "${{ secrets.ENV_FILE }}"
+          @"
+          ${{ secrets.ENV_FILE }}
+          "@ | Set-Content -Path ".env.$env:ENV_NAME"
 
       # Authenticate with GHCR
       - name: Log in to GHCR
