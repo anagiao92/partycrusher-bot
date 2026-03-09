@@ -30,6 +30,5 @@ services:
     environment:
       - APP_ENV=prod
       - TZ=Europe/Lisbon
-    env_file:
-      - .env.prod
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
     profiles: ["prod"]
